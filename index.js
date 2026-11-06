@@ -641,9 +641,9 @@ class GuadaBlenderPlugin {
         const outDir = await resolveWorkspacePath(args.output_dir, ctx && ctx.session, config, {
           kind: 'output_dir',
         });
-        await fs.promises.mkdir(outDir, { recursive: true });
 
         const frames = parseFrames(args.frames);
+        await fs.promises.mkdir(outDir, { recursive: true });
         const format = String(args.format || 'png').toLowerCase() === 'jpg' ? 'jpg' : 'png';
         const prefix =
           String(args.prefix || 'frame').replace(/[^A-Za-z0-9._-]/g, '_') || 'frame';
