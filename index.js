@@ -250,6 +250,12 @@ class GuadaBlenderPlugin {
     if (!this.api || typeof this.api.startJob !== 'function') {
       throw new Error('background jobs are not supported by this host');
     }
+    // 先校验会话，避免"进程已起、job 没登记"的孤儿
+    if (!sessionId) {
+      throw new Error(
+        'background mode requires a session context (sessionId); run in the foreground instead',
+      );
+    }
     const jobDir = path.join(this.dataDir, 'jobs');
     const logFilePath = path.join(
       jobDir,
