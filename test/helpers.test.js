@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { HELPERS, getHelper } = require('../lib/helpers');
+const { HELPERS, UNSUPPORTED, getHelper } = require('../lib/helpers');
 const { buildHelperInvocation } = require('../lib/helper-runner');
 const { missingPackages } = require('../lib/python');
 
@@ -19,8 +19,8 @@ function workspace() {
 
 const config = { restrictToWorkspace: true };
 
-test('catalog has 6 unique helpers with scripts', () => {
-  assert.equal(HELPERS.length, 6);
+test('catalog has 14 unique helpers with scripts', () => {
+  assert.equal(HELPERS.length, 14);
   const names = new Set(HELPERS.map((h) => h.name));
   assert.equal(names.size, HELPERS.length);
   for (const helper of HELPERS) {
@@ -28,6 +28,16 @@ test('catalog has 6 unique helpers with scripts', () => {
     assert.ok(Array.isArray(helper.arguments));
     assert.ok(helper.dependencies);
   }
+});
+
+test('scipy and maintenance helpers are listed as unsupported', () => {
+  const names = UNSUPPORTED.map((item) => item.name);
+  assert.ok(names.includes('wireframe-analyzer'));
+  assert.ok(names.includes('mask-to-mesh-recipe'));
+  const scipy = UNSUPPORTED.filter((item) => item.reason === 'requires-scipy');
+  assert.equal(scipy.length, 3);
+  const maintenance = UNSUPPORTED.filter((item) => item.reason === 'maintenance');
+  assert.equal(maintenance.length, 3);
 });
 
 test('builds argv for a path-array helper', async () => {

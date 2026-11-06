@@ -1,7 +1,7 @@
 {
   "id": "guada-blender",
   "name": "GuaDa Blender",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Blender 3D 建模、场景检查、预览、渲染与导出工具（三方插件）",
   "author": "donggua-zen",
   "category": "user",

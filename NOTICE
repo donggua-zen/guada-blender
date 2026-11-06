@@ -4,9 +4,9 @@ Copyright (c) 2026 donggua-zen
 This product includes software ported from dsh-blender
 (https://github.com/CheshireJCat/blender), licensed under the MIT License.
 The Blender-side driver (scripts/blender_driver.py), the helper driver
-(scripts/helper_driver.py) and the bundled helper scripts under helpers/
-are adapted from that project. Its copyright notice and license are
-reproduced below.
+(scripts/helper_driver.py), the bundled helper scripts under helpers/, and
+the domain skill texts under skills/create-3d-model/references/ are adapted
+from that project. Its copyright notice and license are reproduced below.
 
 --------------------------------------------------------------------------
 dsh-blender

@@ -51,7 +51,7 @@ test('onLoad registers 13 tools, 1 skill, settings slot and rpc', async () => {
         'blender_validate_scene',
       ],
     );
-    assert.equal(api.calls.skills.length, 1);
+    assert.equal(api.calls.skills.length, 30);
     assert.equal(api.calls.skills[0].name, 'create-3d-model');
     assert.equal(api.calls.slots.length, 1);
     assert.equal(api.calls.slots[0].name, 'settings');

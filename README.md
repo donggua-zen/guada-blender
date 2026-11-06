@@ -2,7 +2,7 @@
 
 GuaDa 的**三方插件**：把 Blender 3D 建模、场景检查、预览、渲染与导出接进 GuaDa。
 
-> 参考 `CheshireJCat/blender`（dsh-blender）的能力形态，当前实现 **13 个工具 + 1 个编排技能**（Phase 3：helper 机制 + 6 个确定性分析）。
+> 参考 `CheshireJCat/blender`（dsh-blender）的能力形态，当前实现 **13 个工具 + 30 个技能（1 编排 + 29 领域模块）+ 14 个确定性 helper**（Phase 4）。
 > 不依赖 BlenderMCP、不开放控制端口：每次操作启动独立的 `blender --background` 进程。
 
 ## 工具
@@ -23,7 +23,17 @@ GuaDa 的**三方插件**：把 Blender 3D 建模、场景检查、预览、渲�
 | `blender_helper_catalog` | 列出确定性 helper 与依赖/可用性 |
 | `blender_helper_run` | 执行白名单 helper（参考图分析/渲染对比/动画 QA） |
 
-技能：`create-3d-model`（编排流程 + 质量门）。
+技能：`create-3d-model`（编排流程 + 质量门）+ 29 个领域模块技能（建模/材质/灯光/相机/渲染/动画/UV/导出/参考图重建/修复/QA）。
+
+模块技能在 `skills/create-3d-model/references/modules/<name>/SKILL.md`，通过 `skill_learn` 按需加载；路由表见 `references/capability-map.md`，工具映射见 `references/guada-integration.md`。
+
+### helper（14 个，白名单）
+
+参考图分析、渲染对比、动画 QA：
+
+`animation-contact-sheet`、`reference-manifest-compiler`、`render-overlay-validator`、`silhouette-validator`、`template-analyzer`、`segment-source-parts`、`seeded-part-masks`、`atlas-region-detector`、`atlas-region-mapper`、`contour-correspondence-report`、`look-fit-report`、`multiview-fit-report`、`register-orthographic-views`、`view-constraint-report`
+
+未收录（catalog 标 `requires-scipy` / `maintenance`）：`wireframe-analyzer`、`mask-to-mesh-recipe`、`source-locked-skin-recipe`、`skill-graph-audit`、`release-readiness-check`、`sanitize-skill-contributions`。
 
 ## 安装
 

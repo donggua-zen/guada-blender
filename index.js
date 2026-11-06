@@ -32,7 +32,7 @@ const {
 } = require('./lib/paths');
 const { getVersion, runBlender, runScript } = require('./lib/blender');
 const { parseFrames } = require('./lib/frames');
-const { HELPERS, getHelper } = require('./lib/helpers');
+const { HELPERS, UNSUPPORTED, getHelper, getUnsupported } = require('./lib/helpers');
 const { detectAndProbe, missingPackages } = require('./lib/python');
 const { runHelper } = require('./lib/helper-runner');
 const { clip } = require('./lib/process');
@@ -174,24 +174,47 @@ class GuadaBlenderPlugin {
 
   registerSkill(api) {
     if (typeof api.registerSkill !== 'function') return;
-    const dir = path.join(this.pluginDir, 'skills', 'create-3d-model');
-    const file = path.join(dir, 'SKILL.md');
-    if (!fs.existsSync(file)) return;
-    const raw = fs.readFileSync(file, 'utf8');
-    const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/u.exec(raw);
-    if (!match) return;
-    const name = (/^name:\s*(.+)$/mu.exec(match[1]) || [])[1];
-    const description = (/^description:\s*(.+)$/mu.exec(match[1]) || [])[1];
-    if (!name || !description) return;
-    api.registerSkill({
-      name: name.trim(),
-      description: description.trim(),
-      content: match[2].trim(),
-      version: VERSION,
-      author: 'donggua-zen',
-      tags: ['blender', '3d', 'modeling', 'render'],
-      resourceBase: { kind: 'directory', path: dir },
-    });
+    const skillRoot = path.join(this.pluginDir, 'skills');
+    if (!fs.existsSync(skillRoot)) return;
+
+    // 编排技能 + references/modules 下的 29 个领域技能
+    const targets = [{ dir: path.join(skillRoot, 'create-3d-model'), orchestration: true }];
+    const modulesRoot = path.join(skillRoot, 'create-3d-model', 'references', 'modules');
+    if (fs.existsSync(modulesRoot)) {
+      for (const entry of fs.readdirSync(modulesRoot, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        targets.push({ dir: path.join(modulesRoot, entry.name), orchestration: false });
+      }
+    }
+
+    this.registeredSkills = 0;
+    for (const target of targets) {
+      try {
+        const file = path.join(target.dir, 'SKILL.md');
+        if (!fs.existsSync(file)) continue;
+        const raw = fs.readFileSync(file, 'utf8');
+        const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/u.exec(raw);
+        if (!match) continue;
+        const name = (/^name:\s*(.+)$/mu.exec(match[1]) || [])[1];
+        const description = (/^description:\s*(.+)$/mu.exec(match[1]) || [])[1];
+        if (!name || !description) continue;
+        api.registerSkill({
+          name: name.trim(),
+          description: description.trim(),
+          content: match[2].trim(),
+          version: VERSION,
+          author: 'donggua-zen',
+          tags: target.orchestration
+            ? ['blender', '3d', 'modeling', 'render']
+            : ['blender', '3d', 'module'],
+          resourceBase: { kind: 'directory', path: target.dir },
+        });
+        this.registeredSkills++;
+      } catch (err) {
+        // 单个技能失败不阻断插件加载
+        this.skillErrors = (this.skillErrors || 0) + 1;
+      }
+    }
   }
 
   // ── 工具 ──
@@ -279,7 +302,7 @@ class GuadaBlenderPlugin {
               enabled: config.enableHelpers !== false,
               count: HELPERS.length,
             },
-            skills: 1,
+            skills: this.registeredSkills || 0,
             config,
           }),
         };
@@ -964,6 +987,19 @@ class GuadaBlenderPlugin {
           })
           .filter((helper) => includeUnavailable || helper.available);
 
+        const unsupported = includeUnavailable
+          ? UNSUPPORTED.filter((item) => !args.module || item.module === String(args.module)).map(
+              (item) => ({
+                name: item.name,
+                module: item.module,
+                description: item.description,
+                dependencies: item.dependencies,
+                available: false,
+                unsupported: { reason: item.reason },
+              }),
+            )
+          : [];
+
         return {
           content: json({
             python: {
@@ -975,6 +1011,7 @@ class GuadaBlenderPlugin {
               error: python.error || undefined,
             },
             helpers,
+            unsupported,
             total: helpers.length,
           }),
         };
@@ -1005,6 +1042,16 @@ class GuadaBlenderPlugin {
         }
         const helper = getHelper(args.name);
         if (!helper) {
+          const unsupported = getUnsupported(args.name);
+          if (unsupported) {
+            throw new Error(
+              `helper ${unsupported.name} is not bundled (${unsupported.reason}); ${
+                unsupported.reason === 'requires-scipy'
+                  ? 'install scipy into the analysis Python, or use the module skill directly'
+                  : 'this helper is a maintenance tool and is not shipped'
+              }`,
+            );
+          }
           throw new Error(`unknown helper: ${args.name} (call blender_helper_catalog)`);
         }
         if (helper.maintenance && config.enableMaintenanceHelpers !== true) {
