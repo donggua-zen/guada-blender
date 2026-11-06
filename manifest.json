@@ -1,0 +1,16 @@
+{
+  "id": "guada-blender",
+  "name": "GuaDa Blender",
+  "version": "0.1.0",
+  "description": "Blender 3D 建模、场景检查、预览、渲染与导出工具（三方插件）",
+  "author": "donggua-zen",
+  "category": "user",
+  "icon": "assets/icon.svg",
+  "main": "index.js",
+  "apiVersion": 2,
+  "permissions": ["fs", "shell"],
+  "entries": {
+    "backend": "index.js",
+    "frontend": "frontend/dist"
+  }
+}
