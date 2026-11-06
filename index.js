@@ -32,11 +32,14 @@ const {
 } = require('./lib/paths');
 const { getVersion, runBlender, runScript } = require('./lib/blender');
 const { parseFrames } = require('./lib/frames');
+const { HELPERS, getHelper } = require('./lib/helpers');
+const { detectAndProbe, missingPackages } = require('./lib/python');
+const { runHelper } = require('./lib/helper-runner');
 const { clip } = require('./lib/process');
 
 const PLUGIN_ID = 'guada-blender';
 const PLUGIN_NAME = 'GuaDa Blender';
-const VERSION = '0.2.0';
+const VERSION = '0.3.0';
 
 const SUPPORTED_IMPORTS = new Set([
   '.glb', '.gltf', '.fbx', '.obj', '.stl', '.usd', '.usda', '.usdc', '.ply', '.dae',
@@ -205,6 +208,8 @@ class GuadaBlenderPlugin {
     api.registerTool(this.toolExport());
     api.registerTool(this.toolValidateScene());
     api.registerTool(this.toolValidateExport());
+    api.registerTool(this.toolHelperCatalog());
+    api.registerTool(this.toolHelperRun());
   }
 
   async prepare(ctx) {
@@ -247,6 +252,12 @@ class GuadaBlenderPlugin {
           timeoutMs: Math.min(config.timeoutMs, 15000),
           signal,
         });
+        const analysis = await detectAndProbe({
+          analysisPythonExecutable: config.analysisPythonExecutable,
+          blenderExecutable: executable,
+          timeoutMs: Math.min(config.timeoutMs, 15000),
+          signal,
+        });
         return {
           content: json({
             available: version.available,
@@ -256,7 +267,18 @@ class GuadaBlenderPlugin {
             error: version.error || undefined,
             workspace,
             pythonEnabled: config.enablePython !== false,
-            helpers: { available: false, reason: 'helper 包未随本版本分发（Phase 2）' },
+            analysis: {
+              available: analysis.available,
+              executable: analysis.executable,
+              source: analysis.source,
+              version: analysis.version,
+              packages: analysis.packages,
+              error: analysis.error || undefined,
+            },
+            helpers: {
+              enabled: config.enableHelpers !== false,
+              count: HELPERS.length,
+            },
             skills: 1,
             config,
           }),
@@ -889,6 +911,169 @@ class GuadaBlenderPlugin {
     };
   }
 
+  toolHelperCatalog() {
+    return {
+      name: 'blender_helper_catalog',
+      description:
+        '列出内置确定性 helper（参考图分析、渲染对比、动画 QA）及其依赖与可用性。用 blender_helper_run 执行。',
+      parameters: {
+        module: { type: 'string', required: false, description: '可选：只看某个 module' },
+        include_unavailable: {
+          type: 'boolean',
+          required: false,
+          description: '包含缺依赖的 helper，默认 false',
+        },
+      },
+      readOnly: true,
+      dangerLevel: 'safe',
+      display: { icon: 'list', argsKey: 'module' },
+      execute: async (args, ctx, signal) => {
+        const { config, executable } = await this.prepare(ctx);
+        if (config.enableHelpers === false) {
+          throw new Error('helpers are disabled by plugin config (enableHelpers=false)');
+        }
+        const python = await detectAndProbe({
+          analysisPythonExecutable: config.analysisPythonExecutable,
+          blenderExecutable: executable,
+          timeoutMs: Math.min(config.timeoutMs, 15000),
+          signal,
+        });
+        const includeUnavailable = asBool(args.include_unavailable);
+        const helpers = HELPERS.filter(
+          (helper) => !args.module || helper.module === String(args.module),
+        )
+          .map((helper) => {
+            const missing = missingPackages(helper, python);
+            return {
+              name: helper.name,
+              module: helper.module,
+              description: helper.description,
+              runtime: helper.runtime,
+              dependencies: helper.dependencies,
+              missing,
+              available: python.available && missing.length === 0,
+              arguments: helper.arguments.map((spec) => ({
+                name: spec.name,
+                required: Boolean(spec.required),
+                type: spec.type,
+                pathKind: spec.pathKind,
+                choices: spec.choices,
+                positional: Boolean(spec.positional),
+              })),
+            };
+          })
+          .filter((helper) => includeUnavailable || helper.available);
+
+        return {
+          content: json({
+            python: {
+              available: python.available,
+              executable: python.executable,
+              source: python.source,
+              version: python.version,
+              packages: python.packages,
+              error: python.error || undefined,
+            },
+            helpers,
+            total: helpers.length,
+          }),
+        };
+      },
+    };
+  }
+
+  toolHelperRun() {
+    return {
+      name: 'blender_helper_run',
+      description:
+        '执行一个白名单 helper。arguments_json 是 JSON 对象（键见 catalog）；路径参数限制在 workspace 内，输出默认不覆盖。',
+      parameters: {
+        name: { type: 'string', required: true, description: 'helper 名（见 blender_helper_catalog）' },
+        arguments_json: {
+          type: 'string',
+          required: false,
+          description: 'JSON 对象字符串，如 {"image":"ref.png","out":"out.json"}',
+        },
+        allow_overwrite: { type: 'boolean', required: false, description: '允许覆盖已有输出' },
+      },
+      dangerLevel: 'normal',
+      display: { icon: 'helper', argsKey: 'name' },
+      execute: async (args, ctx, signal) => {
+        const { config, executable, workspace } = await this.prepare(ctx);
+        if (config.enableHelpers === false) {
+          throw new Error('helpers are disabled by plugin config (enableHelpers=false)');
+        }
+        const helper = getHelper(args.name);
+        if (!helper) {
+          throw new Error(`unknown helper: ${args.name} (call blender_helper_catalog)`);
+        }
+        if (helper.maintenance && config.enableMaintenanceHelpers !== true) {
+          throw new Error(
+            `helper ${helper.name} is a maintenance helper; enable enableMaintenanceHelpers to run it`,
+          );
+        }
+
+        const python = await detectAndProbe({
+          analysisPythonExecutable: config.analysisPythonExecutable,
+          blenderExecutable: executable,
+          timeoutMs: Math.min(config.timeoutMs, 15000),
+          signal,
+        });
+        if (helper.runtime === 'python') {
+          if (!python.available) {
+            throw new Error(
+              `analysis Python is not available: ${python.error || 'not found'} (set analysisPythonExecutable)`,
+            );
+          }
+          const missing = missingPackages(helper, python);
+          if (missing.length > 0) {
+            throw new Error(
+              `helper ${helper.name} requires missing Python packages: ${missing.join(', ')}`,
+            );
+          }
+        }
+
+        let parsedArguments = {};
+        if (args.arguments_json) {
+          try {
+            parsedArguments =
+              typeof args.arguments_json === 'string'
+                ? JSON.parse(args.arguments_json)
+                : args.arguments_json;
+          } catch (err) {
+            throw new Error(`arguments_json is not valid JSON: ${err.message}`);
+          }
+        }
+
+        const result = await runHelper({
+          helper,
+          helpersRoot: path.join(this.pluginDir, 'helpers'),
+          python,
+          blenderExecutable: executable,
+          arguments: parsedArguments,
+          session: ctx && ctx.session,
+          config,
+          cwd: workspace,
+          signal,
+          allowOverwrite: asBool(args.allow_overwrite),
+        });
+
+        return {
+          content: json({
+            helper: result.helper,
+            module: result.module,
+            exitCode: result.exitCode,
+            durationMs: result.durationMs,
+            outputs: result.outputs,
+            report: result.report,
+            log: result.log,
+          }),
+          imageRefs: imageRefsFor(result.images, 8),
+        };
+      },
+    };
+  }
+
   // ── 设置页 RPC ──
 
   registerRpc(api) {
@@ -909,6 +1094,11 @@ class GuadaBlenderPlugin {
         const version = executable
           ? await getVersion(executable, { timeoutMs: 15000 })
           : { available: false, version: '', error };
+        const analysis = await detectAndProbe({
+          analysisPythonExecutable: config.analysisPythonExecutable,
+          blenderExecutable: executable,
+          timeoutMs: 15000,
+        });
         return {
           version: VERSION,
           config,
@@ -916,6 +1106,11 @@ class GuadaBlenderPlugin {
           executableSource: source,
           detected: detectBlender(),
           blender: version,
+          analysis,
+          helpers: {
+            count: HELPERS.length,
+            enabled: config.enableHelpers !== false,
+          },
           dataDir: this.dataDir,
           pythonEnabled: config.enablePython !== false,
         };
@@ -931,6 +1126,20 @@ class GuadaBlenderPlugin {
           const { executable, source } = resolveExecutable(config);
           const version = await getVersion(executable, { timeoutMs: 15000 });
           return { ok: version.available, executable, source, ...version };
+        } catch (err) {
+          return { ok: false, error: err.message };
+        }
+      },
+      test_python: async (args) => {
+        const config = { ...(await getConfig(api)), ...(args || {}) };
+        try {
+          const { executable } = resolveExecutable(config);
+          const analysis = await detectAndProbe({
+            analysisPythonExecutable: config.analysisPythonExecutable,
+            blenderExecutable: executable,
+            timeoutMs: 15000,
+          });
+          return { ok: analysis.available, ...analysis };
         } catch (err) {
           return { ok: false, error: err.message };
         }

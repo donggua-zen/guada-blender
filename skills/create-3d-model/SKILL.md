@@ -22,6 +22,8 @@ description: 用 GuaDa Blender 工具完成 3D 建模、资产重建、预览、
 | `blender_export` | 导出 GLB/GLTF、FBX、OBJ、STL、USD、PLY |
 | `blender_validate_scene` | 非破坏性结构审计：general / web / 3d-print / animation |
 | `blender_validate_export` | 干净进程回读导出物并审计 |
+| `blender_helper_catalog` | 列出确定性 helper 与依赖/可用性 |
+| `blender_helper_run` | 执行白名单 helper（参数走 `arguments_json`） |
 
 ## 标准流程
 
@@ -43,6 +45,31 @@ description: 用 GuaDa Blender 工具完成 3D 建模、资产重建、预览、
    - `validation.passed=false` 时不要声称"导出成功"。
 3. **动画交付**：用 `blender_render_frames({ frames: "1,30,60" })` 抽代表帧，再逐张 `image_view` 检查。
    - 单次最多 120 帧；输出目录已有同名帧时默认拒绝覆盖，换目录或显式 `allow_overwrite=true`。
+
+## 参考图分析（helper，可选）
+
+当任务是"照着参考图重建/对齐"时，先用确定性的 helper 出证据，再改模型：
+
+1. `blender_helper_catalog`：确认 Python 环境与依赖（numpy / opencv / Pillow）。
+2. `reference-manifest-compiler`：参考图 → 尺寸/组件/bbox 清单。
+3. `template-analyzer` 或 `segment-source-parts`：提取模板/部件掩码。
+4. 渲染后：`render-overlay-validator` / `silhouette-validator` 对比参考图与渲染图。
+5. 动画：`animation-contact-sheet` 把抽帧拼成一张图并标出跳变。
+
+调用方式：
+
+```json
+{
+  "name": "silhouette-validator",
+  "arguments_json": "{\"reference\":\"ref.png\",\"render\":\"out/render.png\",\"out\":\"out/silhouette.json\"}"
+}
+```
+
+规则：
+
+- 路径参数必须在当前 workspace 内；输出默认不覆盖。
+- 缺依赖时 `catalog` 会返回 `missing`；让用户在设置页指到已安装 numpy/opencv/Pillow 的 Python，不要猜路径或自动 `pip install`。
+- helper 的 JSON 报告是"证据"，不要只贴结论；把关键指标写进交付说明。
 
 ## 硬性规则
 

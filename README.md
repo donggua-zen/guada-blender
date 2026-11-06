@@ -2,7 +2,7 @@
 
 GuaDa 的**三方插件**：把 Blender 3D 建模、场景检查、预览、渲染与导出接进 GuaDa。
 
-> 参考 `CheshireJCat/blender`（dsh-blender）的能力形态，当前实现 **11 个工具 + 1 个编排技能**（Phase 2：验收门 + 多帧渲染）。
+> 参考 `CheshireJCat/blender`（dsh-blender）的能力形态，当前实现 **13 个工具 + 1 个编排技能**（Phase 3：helper 机制 + 6 个确定性分析）。
 > 不依赖 BlenderMCP、不开放控制端口：每次操作启动独立的 `blender --background` 进程。
 
 ## 工具
@@ -20,6 +20,8 @@ GuaDa 的**三方插件**：把 Blender 3D 建模、场景检查、预览、渲�
 | `blender_export` | 导出 GLB/GLTF、FBX、OBJ、STL、USD、PLY |
 | `blender_validate_scene` | 结构审计（general / web / 3d-print / animation） |
 | `blender_validate_export` | 干净进程回读导出物并审计 |
+| `blender_helper_catalog` | 列出确定性 helper 与依赖/可用性 |
+| `blender_helper_run` | 执行白名单 helper（参考图分析/渲染对比/动画 QA） |
 
 技能：`create-3d-model`（编排流程 + 质量门）。
 
@@ -43,7 +45,7 @@ github:donggua-zen/guada-blender#main
 
 - GuaDa（PluginApi v2）
 - Blender 4.x/5.x（本机验证 4.5）
-- 无需 Python 第三方包（helper 分析能力不在本期范围）
+- **可选**：Python 3.10+（numpy / opencv / Pillow）用于 helper；不安装则 helper 标记 unavailable，不影响建模/渲染工具。
 
 ## 配置
 
@@ -54,6 +56,10 @@ github:donggua-zen/guada-blender#main
 | `maxOutputChars` | 20000 | 返回日志上限 |
 | `restrictToWorkspace` | true | 工具参数限制在会话 workspace 内 |
 | `enablePython` | true | 允许 `blender_python` / `blender_run_script` |
+| `analysisPythonExecutable` | 自动探测 | helper 使用的 Python（需 numpy/opencv/Pillow） |
+| `enableHelpers` | true | 允许 `blender_helper_catalog` / `blender_helper_run` |
+| `helperTimeoutMs` | 120000 | 单次 helper 超时 |
+| `enableMaintenanceHelpers` | false | 允许 maintenance helper |
 
 ## 安全边界
 

@@ -52,7 +52,11 @@
         maxOutputChars: 20000,
         restrictToWorkspace: true,
         enablePython: true,
+        analysisPythonExecutable: '',
+        enableHelpers: true,
+        helperTimeoutMs: 120000,
       });
+      var pythonResult = ref(null);
 
       function call(method, args) {
         return shared.pluginApi.call(PLUGIN_ID, method, args);
@@ -66,6 +70,9 @@
         form.maxOutputChars = cfg.maxOutputChars || 20000;
         form.restrictToWorkspace = cfg.restrictToWorkspace !== false;
         form.enablePython = cfg.enablePython !== false;
+        form.analysisPythonExecutable = cfg.analysisPythonExecutable || '';
+        form.enableHelpers = cfg.enableHelpers !== false;
+        form.helperTimeoutMs = cfg.helperTimeoutMs || 120000;
       }
 
       function refresh() {
@@ -90,6 +97,9 @@
           maxOutputChars: Number(form.maxOutputChars) || 20000,
           restrictToWorkspace: !!form.restrictToWorkspace,
           enablePython: !!form.enablePython,
+          analysisPythonExecutable: form.analysisPythonExecutable,
+          enableHelpers: !!form.enableHelpers,
+          helperTimeoutMs: Number(form.helperTimeoutMs) || 120000,
         })
           .then(refresh)
           .catch(function (e) {
@@ -122,6 +132,21 @@
           })
           .catch(function (e) {
             testResult.value = { ok: false, error: String((e && e.message) || e) };
+          });
+      }
+
+      function testPython() {
+        pythonResult.value = null;
+        call('test_python', {
+          analysisPythonExecutable: form.analysisPythonExecutable,
+          blenderExecutable: form.blenderExecutable,
+          timeoutMs: Number(form.timeoutMs) || 180000,
+        })
+          .then(function (res) {
+            pythonResult.value = res;
+          })
+          .catch(function (e) {
+            pythonResult.value = { ok: false, error: String((e && e.message) || e) };
           });
       }
 
@@ -159,6 +184,17 @@
             row('版本', blender.version),
             row('自动探测', s.detected),
             row('Python 工具', s.pythonEnabled ? 'enabled' : 'disabled'),
+            row('分析 Python', s.analysis && s.analysis.executable),
+            row('Python 版本', s.analysis && s.analysis.version),
+            row(
+              'Python 包',
+              s.analysis && s.analysis.packages
+                ? Object.keys(s.analysis.packages)
+                    .filter(function (k) { return s.analysis.packages[k]; })
+                    .join(', ')
+                : '-',
+            ),
+            row('Helper 数量', s.helpers ? s.helpers.count : '-'),
             row('数据目录', s.dataDir),
             blender.error ? h('div', { style: Object.assign({}, S.hint, { color: '#dc2626' }) }, blender.error) : null,
           ]),
@@ -185,6 +221,57 @@
                     ? '连接成功：' + (testResult.value.version || testResult.value.executable)
                     : '连接失败：' + (testResult.value.error || 'unknown'))
               : null,
+          ]),
+        );
+
+        children.push(
+          h('div', { style: S.card }, [
+            h('label', { style: S.label }, '分析 Python（Helper）'),
+            h('div', { style: S.hint }, '留空 = 自动探测；需要 numpy / opencv / Pillow。缺依赖时 helper_catalog 会明确标出。'),
+            h('input', {
+              style: S.input,
+              value: form.analysisPythonExecutable,
+              placeholder: 'C:\\Users\\...\\Python313\\python.exe',
+              onInput: function (e) { form.analysisPythonExecutable = e.target.value; },
+            }),
+            h('div', { style: S.row }, [
+              h('button', { style: S.btn, onClick: testPython }, '测试 Python'),
+              h('label', { style: { display: 'flex', gap: '6px', alignItems: 'center' } }, [
+                h('input', {
+                  type: 'checkbox',
+                  checked: form.enableHelpers,
+                  onChange: function (e) { form.enableHelpers = e.target.checked; },
+                }),
+                '启用 helper',
+              ]),
+            ]),
+            pythonResult.value
+              ? h('div', {
+                  style: Object.assign(
+                    {},
+                    S.hint,
+                    pythonResult.value.ok ? S.ok : S.bad,
+                  ),
+                },
+                  pythonResult.value.ok
+                    ? 'Python ' + (pythonResult.value.version || '') + '：' +
+                      Object.keys(pythonResult.value.packages || {})
+                        .filter(function (k) { return pythonResult.value.packages[k]; })
+                        .join(', ')
+                    : '失败：' + (pythonResult.value.error || 'unknown'))
+              : null,
+            h('div', { style: S.row }, [
+              h('span', { style: { width: '120px' } }, 'Helper 超时'),
+              h('input', {
+                style: Object.assign({}, S.input, { width: '160px' }),
+                type: 'number',
+                value: form.helperTimeoutMs,
+                onInput: function (e) { form.helperTimeoutMs = e.target.value; },
+              }),
+            ]),
+            h('div', { style: S.row }, [
+              h('button', { style: S.btnPrimary, disabled: saving.value, onClick: save }, '保存设置'),
+            ]),
           ]),
         );
 

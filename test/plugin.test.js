@@ -26,7 +26,7 @@ function makeApi(options = {}) {
   return api;
 }
 
-test('onLoad registers 8 tools, 1 skill, settings slot and rpc', async () => {
+test('onLoad registers 13 tools, 1 skill, settings slot and rpc', async () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'guada-blender-data-'));
   try {
     const plugin = new GuadaBlenderPlugin();
@@ -37,6 +37,8 @@ test('onLoad registers 8 tools, 1 skill, settings slot and rpc', async () => {
       api.calls.tools.map((t) => t.name).sort(),
       [
         'blender_export',
+        'blender_helper_catalog',
+        'blender_helper_run',
         'blender_import',
         'blender_preview',
         'blender_python',
@@ -53,7 +55,7 @@ test('onLoad registers 8 tools, 1 skill, settings slot and rpc', async () => {
     assert.equal(api.calls.skills[0].name, 'create-3d-model');
     assert.equal(api.calls.slots.length, 1);
     assert.equal(api.calls.slots[0].name, 'settings');
-    for (const name of ['get_status', 'detect', 'save_config', 'test']) {
+    for (const name of ['get_status', 'detect', 'save_config', 'test', 'test_python']) {
       assert.equal(typeof api.calls.rpcs[name], 'function', `rpc ${name}`);
     }
   } finally {
