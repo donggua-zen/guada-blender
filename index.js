@@ -211,7 +211,7 @@ class GuadaBlenderPlugin {
       readOnly: true,
       dangerLevel: 'safe',
       display: { icon: 'info', text: { executing: '检查 Blender', completed: 'Blender 检查完成' } },
-      execute: async (_args, ctx) => {
+      execute: async (_args, ctx, signal) => {
         const workspace = workspaceOf(ctx && ctx.session);
         let config;
         let executable = '';
@@ -234,7 +234,7 @@ class GuadaBlenderPlugin {
 
         const version = await getVersion(executable, {
           timeoutMs: Math.min(config.timeoutMs, 15000),
-          signal: ctx && ctx.abortSignal,
+          signal,
         });
         return {
           content: json({
@@ -267,7 +267,7 @@ class GuadaBlenderPlugin {
       readOnly: true,
       dangerLevel: 'safe',
       display: { icon: 'scene', argsKey: 'blend_path' },
-      execute: async (args, ctx) => {
+      execute: async (args, ctx, signal) => {
         const { config, executable, workspace } = await this.prepare(ctx);
         const blend = await resolveWorkspacePath(args.blend_path, ctx && ctx.session, config, {
           mustExist: true,
@@ -288,7 +288,7 @@ class GuadaBlenderPlugin {
           blendPath: blend,
           config,
           cwd: workspace,
-          signal: ctx && ctx.abortSignal,
+          signal,
         });
         return { content: json(result) };
       },
@@ -306,7 +306,7 @@ class GuadaBlenderPlugin {
       },
       dangerLevel: 'high',
       display: { icon: 'code', argsKey: 'script_path' },
-      execute: async (args, ctx) => {
+      execute: async (args, ctx, signal) => {
         const { config, executable, workspace } = await this.prepare(ctx);
         if (config.enablePython === false) {
           throw new Error('blender_run_script is disabled by plugin config (enablePython=false)');
@@ -329,7 +329,7 @@ class GuadaBlenderPlugin {
           scriptArgs,
           config,
           cwd: workspace,
-          signal: ctx && ctx.abortSignal,
+          signal,
         });
 
         if (result.code !== 0 || result.timedOut || result.aborted) {
@@ -371,7 +371,7 @@ class GuadaBlenderPlugin {
       },
       dangerLevel: 'normal',
       display: { icon: 'import', argsKey: 'source_path' },
-      execute: async (args, ctx) => {
+      execute: async (args, ctx, signal) => {
         const { config, executable, workspace } = await this.prepare(ctx);
         const source = await resolveWorkspacePath(args.source_path, ctx && ctx.session, config, {
           mustExist: true,
@@ -392,7 +392,7 @@ class GuadaBlenderPlugin {
           payload: { source_path: source, output_path: save },
           config,
           cwd: workspace,
-          signal: ctx && ctx.abortSignal,
+          signal,
         });
         const info = await assertRegularFile(save, 'import output');
         return {
@@ -422,7 +422,7 @@ class GuadaBlenderPlugin {
       },
       dangerLevel: 'high',
       display: { icon: 'code', argsKey: 'save_path' },
-      execute: async (args, ctx) => {
+      execute: async (args, ctx, signal) => {
         const { config, executable, workspace } = await this.prepare(ctx);
         if (config.enablePython === false) {
           throw new Error('blender_python is disabled by plugin config (enablePython=false)');
@@ -454,7 +454,7 @@ class GuadaBlenderPlugin {
           blendPath: blend,
           config,
           cwd: workspace,
-          signal: ctx && ctx.abortSignal,
+          signal,
         });
         const info = await assertRegularFile(save, 'python output');
         return {
@@ -493,7 +493,7 @@ class GuadaBlenderPlugin {
       },
       dangerLevel: 'normal',
       display: { icon: 'image', argsKey: 'output_path' },
-      execute: async (args, ctx) => {
+      execute: async (args, ctx, signal) => {
         const { config, executable, workspace } = await this.prepare(ctx);
         const blend = await resolveWorkspacePath(args.blend_path, ctx && ctx.session, config, {
           mustExist: true,
@@ -526,7 +526,7 @@ class GuadaBlenderPlugin {
           blendPath: blend,
           config,
           cwd: workspace,
-          signal: ctx && ctx.abortSignal,
+          signal,
         });
         const info = await assertRegularFile(output, 'preview output');
         return imageResult(output, {
@@ -558,7 +558,7 @@ class GuadaBlenderPlugin {
       },
       dangerLevel: 'normal',
       display: { icon: 'image', argsKey: 'output_path' },
-      execute: async (args, ctx) => {
+      execute: async (args, ctx, signal) => {
         const { config, executable, workspace } = await this.prepare(ctx);
         const blend = await resolveWorkspacePath(args.blend_path, ctx && ctx.session, config, {
           mustExist: true,
@@ -586,7 +586,7 @@ class GuadaBlenderPlugin {
           blendPath: blend,
           config,
           cwd: workspace,
-          signal: ctx && ctx.abortSignal,
+          signal,
         });
         const info = await assertRegularFile(output, 'render output');
         return imageResult(output, {
@@ -612,7 +612,7 @@ class GuadaBlenderPlugin {
       },
       dangerLevel: 'normal',
       display: { icon: 'export', argsKey: 'output_path' },
-      execute: async (args, ctx) => {
+      execute: async (args, ctx, signal) => {
         const { config, executable, workspace } = await this.prepare(ctx);
         const blend = await resolveWorkspacePath(args.blend_path, ctx && ctx.session, config, {
           mustExist: true,
@@ -635,7 +635,7 @@ class GuadaBlenderPlugin {
           blendPath: blend,
           config,
           cwd: workspace,
-          signal: ctx && ctx.abortSignal,
+          signal,
         });
         const info = await assertRegularFile(output, 'export output');
         return {
