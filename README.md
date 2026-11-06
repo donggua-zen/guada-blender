@@ -2,7 +2,7 @@
 
 GuaDa 的**三方插件**：把 Blender 3D 建模、场景检查、预览、渲染与导出接进 GuaDa。
 
-> 参考 `CheshireJCat/blender`（dsh-blender）的能力形态，首期实现 **8 个工具 + 1 个编排技能**。
+> 参考 `CheshireJCat/blender`（dsh-blender）的能力形态，当前实现 **11 个工具 + 1 个编排技能**（Phase 2：验收门 + 多帧渲染）。
 > 不依赖 BlenderMCP、不开放控制端口：每次操作启动独立的 `blender --background` 进程。
 
 ## 工具
@@ -16,7 +16,10 @@ GuaDa 的**三方插件**：把 Blender 3D 建模、场景检查、预览、渲�
 | `blender_python` | 执行小段 `bpy`/`bmesh` 并保存新 `.blend` |
 | `blender_preview` | 临时相机+灯光预览（不改源文件） |
 | `blender_render` | 场景相机渲染单帧 |
+| `blender_render_frames` | 按帧号批量渲染（`"1,3,5-7"`，最多 120 帧） |
 | `blender_export` | 导出 GLB/GLTF、FBX、OBJ、STL、USD、PLY |
+| `blender_validate_scene` | 结构审计（general / web / 3d-print / animation） |
+| `blender_validate_export` | 干净进程回读导出物并审计 |
 
 技能：`create-3d-model`（编排流程 + 质量门）。
 

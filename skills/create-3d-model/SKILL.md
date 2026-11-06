@@ -18,7 +18,10 @@ description: 用 GuaDa Blender 工具完成 3D 建模、资产重建、预览、
 | `blender_python` | 执行小段 `bpy`/`bmesh` 代码并保存新的 `.blend` |
 | `blender_preview` | 临时相机+灯光预览（不改源文件） |
 | `blender_render` | 用场景相机渲染单帧 |
+| `blender_render_frames` | 按帧号批量渲染（`"1,3,5-7"`，最多 120 帧） |
 | `blender_export` | 导出 GLB/GLTF、FBX、OBJ、STL、USD、PLY |
+| `blender_validate_scene` | 非破坏性结构审计：general / web / 3d-print / animation |
+| `blender_validate_export` | 干净进程回读导出物并审计 |
 
 ## 标准流程
 
@@ -28,6 +31,18 @@ description: 用 GuaDa Blender 工具完成 3D 建模、资产重建、预览、
 4. **出视觉证据**：`blender_preview`（快速 blockout）或 `blender_render`（正式）。成功后**必须**用 `image_view` 看图，再判断是否完成。
 5. **验收**：确认对象数量/包围盒/材质/相机/帧范围；必要时再 `blender_scene_info`。
 6. **导出**：`blender_export` 到 GLB/GLTF/FBX 等；导出后可用 `blender_import` 回读验证。
+
+## 验收门（导出前后）
+
+1. **导出前**：`blender_validate_scene({ blend_path, profile })`
+   - 角色/一般资产用 `general`；Web 交付用 `web`；3D 打印用 `3d-print`；带动画用 `animation`。
+   - `errors` 非空时工具会标记失败：先修拓扑/材质/UV，再继续。
+   - `warnings` 不阻塞，但要在交付说明里列出。
+2. **导出后**：`blender_validate_export({ model_path, profile })`
+   - 用干净进程回读 GLB/FBX/STL，确认导入对象数、材质、UV 与场景一致。
+   - `validation.passed=false` 时不要声称"导出成功"。
+3. **动画交付**：用 `blender_render_frames({ frames: "1,30,60" })` 抽代表帧，再逐张 `image_view` 检查。
+   - 单次最多 120 帧；输出目录已有同名帧时默认拒绝覆盖，换目录或显式 `allow_overwrite=true`。
 
 ## 硬性规则
 

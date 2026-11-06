@@ -31,11 +31,12 @@ const {
   assertWritableTarget,
 } = require('./lib/paths');
 const { getVersion, runBlender, runScript } = require('./lib/blender');
+const { parseFrames } = require('./lib/frames');
 const { clip } = require('./lib/process');
 
 const PLUGIN_ID = 'guada-blender';
 const PLUGIN_NAME = 'GuaDa Blender';
-const VERSION = '0.1.0';
+const VERSION = '0.2.0';
 
 const SUPPORTED_IMPORTS = new Set([
   '.glb', '.gltf', '.fbx', '.obj', '.stl', '.usd', '.usda', '.usdc', '.ply', '.dae',
@@ -43,6 +44,7 @@ const SUPPORTED_IMPORTS = new Set([
 const SUPPORTED_EXPORTS = new Set(['.glb', '.gltf', '.fbx', '.obj', '.stl', '.usd', '.usda', '.usdc', '.ply']);
 const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg']);
 const PREVIEW_VIEWS = ['isometric', 'front', 'back', 'left', 'right', 'top', 'bottom'];
+const VALIDATION_PROFILES = ['general', 'web', '3d-print', 'animation'];
 
 const NLS_ZH = {
   'settings.title': 'GuaDa Blender',
@@ -62,17 +64,23 @@ function mediaTypeOf(file) {
   return ext === '.png' ? 'image/png' : 'image/jpeg';
 }
 
+function imageRefFor(file) {
+  return {
+    url: file,
+    refType: 'local',
+    media_type: mediaTypeOf(file),
+    name: path.basename(file),
+  };
+}
+
+function imageRefsFor(files, max = 8) {
+  return (files || []).slice(0, max).map(imageRefFor);
+}
+
 function imageResult(file, summary) {
   return {
     content: json(summary),
-    imageRefs: [
-      {
-        url: file,
-        refType: 'local',
-        media_type: mediaTypeOf(file),
-        name: path.basename(file),
-      },
-    ],
+    imageRefs: [imageRefFor(file)],
   };
 }
 
@@ -193,7 +201,10 @@ class GuadaBlenderPlugin {
     api.registerTool(this.toolPython());
     api.registerTool(this.toolPreview());
     api.registerTool(this.toolRender());
+    api.registerTool(this.toolRenderFrames());
     api.registerTool(this.toolExport());
+    api.registerTool(this.toolValidateScene());
+    api.registerTool(this.toolValidateExport());
   }
 
   async prepare(ctx) {
@@ -599,6 +610,95 @@ class GuadaBlenderPlugin {
     };
   }
 
+  toolRenderFrames() {
+    return {
+      name: 'blender_render_frames',
+      description:
+        '按帧号批量渲染 PNG/JPEG（动画代表帧/序列帧）。frames 支持 "1,3,5-7"，单次最多 120 帧。',
+      parameters: {
+        blend_path: { type: 'string', required: true, description: 'workspace 内的 .blend' },
+        output_dir: { type: 'string', required: true, description: 'workspace 内的输出目录（自动创建）' },
+        frames: { type: 'string', required: true, description: '帧号表达式，如 "1,3,5-7"' },
+        format: { type: 'string', required: false, description: 'png（默认）或 jpg' },
+        prefix: { type: 'string', required: false, description: '文件名前缀，默认 frame' },
+        width: { type: 'number', required: false, description: '宽度，默认 640' },
+        height: { type: 'number', required: false, description: '高度，默认 640' },
+        samples: { type: 'number', required: false, description: '采样数，默认 32' },
+        camera: { type: 'string', required: false, description: '可选：相机对象名' },
+        allow_overwrite: { type: 'boolean', required: false, description: '允许覆盖已有帧文件' },
+      },
+      dangerLevel: 'normal',
+      display: { icon: 'image', argsKey: 'frames' },
+      execute: async (args, ctx, signal) => {
+        const { config, executable, workspace } = await this.prepare(ctx);
+        const blend = await resolveWorkspacePath(args.blend_path, ctx && ctx.session, config, {
+          mustExist: true,
+          kind: 'blend_path',
+        });
+        await assertRegularFile(blend, 'blend_path');
+        ensureExt(blend, new Set(['.blend']), 'blend_path');
+
+        const outDir = await resolveWorkspacePath(args.output_dir, ctx && ctx.session, config, {
+          kind: 'output_dir',
+        });
+        await fs.promises.mkdir(outDir, { recursive: true });
+
+        const frames = parseFrames(args.frames);
+        const format = String(args.format || 'png').toLowerCase() === 'jpg' ? 'jpg' : 'png';
+        const prefix =
+          String(args.prefix || 'frame').replace(/[^A-Za-z0-9._-]/g, '_') || 'frame';
+        const files = frames.map((frame) =>
+          path.join(outDir, `${prefix}-${String(frame).padStart(6, '0')}.${format}`),
+        );
+
+        if (!asBool(args.allow_overwrite)) {
+          const conflicts = files.filter((file) => fs.existsSync(file));
+          if (conflicts.length > 0) {
+            throw new Error(
+              `render frames would overwrite ${conflicts.length} file(s): ${conflicts
+                .slice(0, 3)
+                .join(', ')} (set allow_overwrite=true to replace)`,
+            );
+          }
+        }
+
+        const result = await runBlender({
+          executable,
+          operation: 'render_frames',
+          payload: {
+            frames,
+            output_dir: outDir,
+            format,
+            prefix,
+            width: asNumber(args.width, 640),
+            height: asNumber(args.height, 640),
+            samples: asNumber(args.samples, 32),
+            camera: args.camera ? String(args.camera) : undefined,
+          },
+          blendPath: blend,
+          config,
+          cwd: workspace,
+          signal,
+        });
+
+        const imagePaths =
+          Array.isArray(result.image_paths) && result.image_paths.length > 0
+            ? result.image_paths
+            : files;
+        return {
+          content: json({
+            outputDir: outDir,
+            frames,
+            imagePaths,
+            imageCount: imagePaths.length,
+            log: result.log,
+          }),
+          imageRefs: imageRefsFor(imagePaths, 8),
+        };
+      },
+    };
+  }
+
   toolExport() {
     return {
       name: 'blender_export',
@@ -645,6 +745,145 @@ class GuadaBlenderPlugin {
             bytes: info.size,
             log: result.log,
           }),
+        };
+      },
+    };
+  }
+
+  toolValidateScene() {
+    return {
+      name: 'blender_validate_scene',
+      description:
+        '对 .blend 做非破坏性结构审计（拓扑/非流形/松散点/UV/材质/变换/动画）。profile: general、web、3d-print、animation。errors 非空时工具结果标记为失败。',
+      parameters: {
+        blend_path: { type: 'string', required: true, description: 'workspace 内的 .blend' },
+        profile: {
+          type: 'string',
+          required: false,
+          enum: VALIDATION_PROFILES,
+          description: '审计目标，默认 general',
+        },
+        object_names: {
+          type: 'string',
+          required: false,
+          description: '可选：只审这些对象，逗号分隔；缺省全场景',
+        },
+      },
+      readOnly: true,
+      dangerLevel: 'safe',
+      display: { icon: 'check', argsKey: 'blend_path' },
+      execute: async (args, ctx, signal) => {
+        const { config, executable, workspace } = await this.prepare(ctx);
+        const blend = await resolveWorkspacePath(args.blend_path, ctx && ctx.session, config, {
+          mustExist: true,
+          kind: 'blend_path',
+        });
+        await assertRegularFile(blend, 'blend_path');
+        ensureExt(blend, new Set(['.blend']), 'blend_path');
+
+        const profile = args.profile ? String(args.profile) : 'general';
+        if (!VALIDATION_PROFILES.includes(profile)) {
+          throw new Error(`profile must be one of: ${VALIDATION_PROFILES.join(', ')}`);
+        }
+        const objectNames = String(args.object_names || '')
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
+
+        const result = await runBlender({
+          executable,
+          operation: 'validate_scene',
+          payload: { profile, object_names: objectNames },
+          blendPath: blend,
+          config,
+          cwd: workspace,
+          signal,
+        });
+
+        return {
+          content: json({
+            blendPath: blend,
+            profile,
+            passed: result.passed,
+            errors: result.errors || [],
+            warnings: result.warnings || [],
+            objects: result.objects || [],
+            scene: result.scene,
+            log: result.log,
+          }),
+          isError: result.passed !== true,
+        };
+      },
+    };
+  }
+
+  toolValidateExport() {
+    return {
+      name: 'blender_validate_export',
+      description:
+        '在干净 Blender 进程中回读导出物（GLB/GLTF/FBX/OBJ/STL/USD/PLY/DAE）并做结构审计。profile 缺省按扩展名推断（.stl → 3d-print，其余 web）。',
+      parameters: {
+        model_path: { type: 'string', required: true, description: 'workspace 内的导出物' },
+        profile: {
+          type: 'string',
+          required: false,
+          enum: VALIDATION_PROFILES,
+          description: '审计目标；缺省按扩展名推断',
+        },
+        object_names: {
+          type: 'string',
+          required: false,
+          description: '可选：只审这些导入对象，逗号分隔',
+        },
+      },
+      readOnly: true,
+      dangerLevel: 'safe',
+      display: { icon: 'check', argsKey: 'model_path' },
+      execute: async (args, ctx, signal) => {
+        const { config, executable, workspace } = await this.prepare(ctx);
+        const model = await resolveWorkspacePath(args.model_path, ctx && ctx.session, config, {
+          mustExist: true,
+          kind: 'model_path',
+        });
+        await assertRegularFile(model, 'model_path');
+        const ext = ensureExt(model, SUPPORTED_IMPORTS, 'model_path');
+        if (ext === '.blend') {
+          throw new Error('model_path must be a portable model (GLB/GLTF/FBX/OBJ/STL/USD/PLY/DAE)');
+        }
+
+        const profile = args.profile
+          ? String(args.profile)
+          : ext === '.stl'
+            ? '3d-print'
+            : 'web';
+        if (!VALIDATION_PROFILES.includes(profile)) {
+          throw new Error(`profile must be one of: ${VALIDATION_PROFILES.join(', ')}`);
+        }
+        const objectNames = String(args.object_names || '')
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
+
+        const result = await runBlender({
+          executable,
+          operation: 'validate_asset',
+          payload: { source_path: model, profile, object_names: objectNames },
+          config,
+          cwd: workspace,
+          signal,
+        });
+
+        const validation = result.validation || {};
+        return {
+          content: json({
+            modelPath: model,
+            format: ext.replace(/^\./, ''),
+            importedObjects: result.imported_objects || [],
+            scene: result.scene,
+            validation,
+            log: result.log,
+          }),
+          isError: validation.passed !== true,
         };
       },
     };

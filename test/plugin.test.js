@@ -41,9 +41,12 @@ test('onLoad registers 8 tools, 1 skill, settings slot and rpc', async () => {
         'blender_preview',
         'blender_python',
         'blender_render',
+        'blender_render_frames',
         'blender_run_script',
         'blender_scene_info',
         'blender_status',
+        'blender_validate_export',
+        'blender_validate_scene',
       ],
     );
     assert.equal(api.calls.skills.length, 1);
