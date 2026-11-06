@@ -34,12 +34,12 @@ const { getVersion, runBlender, runScript } = require('./lib/blender');
 const { parseFrames } = require('./lib/frames');
 const { HELPERS, UNSUPPORTED, getHelper, getUnsupported } = require('./lib/helpers');
 const { detectAndProbe, missingPackages } = require('./lib/python');
-const { runHelper } = require('./lib/helper-runner');
-const { clip } = require('./lib/process');
+const { runHelper, prepareHelperCommand } = require('./lib/helper-runner');
+const { clip, spawnToLog, readLogSlice } = require('./lib/process');
 
 const PLUGIN_ID = 'guada-blender';
 const PLUGIN_NAME = 'GuaDa Blender';
-const VERSION = '0.3.0';
+const VERSION = '0.5.0';
 
 const SUPPORTED_IMPORTS = new Set([
   '.glb', '.gltf', '.fbx', '.obj', '.stl', '.usd', '.usda', '.usdc', '.ply', '.dae',
@@ -239,6 +239,68 @@ class GuadaBlenderPlugin {
     const config = await getConfig(this.api);
     const { executable, source } = resolveExecutable(config);
     return { config, executable, source, workspace: workspaceOf(ctx && ctx.session) };
+  }
+
+  /**
+   * 后台执行一个 Blender 进程，登记为宿主 job。
+   * 返回 { jobId, logFilePath }；调用方用 job_read / job_stop 管理。
+   */
+  startBlenderJob(options) {
+    const { executable, args, config, workspace, label, signal, sessionId } = options;
+    if (!this.api || typeof this.api.startJob !== 'function') {
+      throw new Error('background jobs are not supported by this host');
+    }
+    const jobDir = path.join(this.dataDir, 'jobs');
+    const logFilePath = path.join(
+      jobDir,
+      `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.log`,
+    );
+    const handle = spawnToLog(executable, args, {
+      cwd: workspace,
+      logFilePath,
+      timeoutMs: config.timeoutMs,
+      signal,
+    });
+    const jobId = this.api.startJob(
+      {
+        label,
+        logFilePath,
+        notify: true,
+        read: (opts) => readLogSlice(logFilePath, opts),
+        cancel: () => handle.kill(),
+        done: handle.done.then((outcome) => ({
+          status: outcome.status,
+          exitCode: outcome.exitCode,
+          detail: outcome.detail,
+        })),
+      },
+      sessionId,
+    );
+    return { jobId, logFilePath, handle };
+  }
+
+  /**
+   * 构造后台渲染的 Blender 参数（与 runBlender 的 driver 调用一致）。
+   */
+  buildDriverArgs(operation, payloadPath, resultPath, blendPath) {
+    const args = blendPath
+      ? [blendPath, '--background']
+      : ['--background', '--factory-startup'];
+    args.push(
+      '--disable-autoexec',
+      '--python-exit-code',
+      '1',
+      '--python',
+      path.join(this.pluginDir, 'scripts', 'blender_driver.py'),
+      '--',
+      '--operation',
+      operation,
+      '--payload',
+      payloadPath,
+      '--result',
+      resultPath,
+    );
+    return args;
   }
 
   toolStatus() {
@@ -611,6 +673,11 @@ class GuadaBlenderPlugin {
         transparent: { type: 'boolean', required: false, description: '透明背景' },
         camera: { type: 'string', required: false, description: '可选：相机对象名' },
         allow_overwrite: { type: 'boolean', required: false, description: '允许覆盖已有输出' },
+        run_in_background: {
+          type: 'boolean',
+          required: false,
+          description: '后台执行并返回 jobId（用 job_read/job_stop 管理），默认 false',
+        },
       },
       dangerLevel: 'normal',
       display: { icon: 'image', argsKey: 'output_path' },
@@ -627,18 +694,46 @@ class GuadaBlenderPlugin {
         ensureExt(output, IMAGE_EXTS, 'output_path');
         await assertWritableTarget(output, asBool(args.allow_overwrite), 'output_path');
 
+        const payload = {
+          output_path: output,
+          frame: args.frame === undefined ? undefined : asNumber(args.frame, 1),
+          width: asNumber(args.width, 960),
+          height: asNumber(args.height, 960),
+          samples: asNumber(args.samples, 64),
+          transparent: asBool(args.transparent),
+          camera: args.camera ? String(args.camera) : undefined,
+        };
+
+        if (asBool(args.run_in_background)) {
+          const tempDir = await fs.promises.mkdtemp(
+            path.join(os.tmpdir(), 'guada-blender-job-'),
+          );
+          const payloadPath = path.join(tempDir, 'payload.json');
+          const resultPath = path.join(tempDir, 'result.json');
+          await fs.promises.writeFile(payloadPath, JSON.stringify(payload), 'utf8');
+          const { jobId, logFilePath } = this.startBlenderJob({
+            executable,
+            args: this.buildDriverArgs('render', payloadPath, resultPath, blend),
+            config,
+            workspace,
+            label: `blender_render: ${path.basename(output)}`,
+            signal,
+            sessionId: ctx && ctx.session && ctx.session.sessionId,
+          });
+          return {
+            content: json({
+              jobId,
+              logFilePath,
+              outputPath: output,
+              note: 'running in background; use job_read to follow progress',
+            }),
+          };
+        }
+
         const result = await runBlender({
           executable,
           operation: 'render',
-          payload: {
-            output_path: output,
-            frame: args.frame === undefined ? undefined : asNumber(args.frame, 1),
-            width: asNumber(args.width, 960),
-            height: asNumber(args.height, 960),
-            samples: asNumber(args.samples, 64),
-            transparent: asBool(args.transparent),
-            camera: args.camera ? String(args.camera) : undefined,
-          },
+          payload,
           blendPath: blend,
           config,
           cwd: workspace,
@@ -671,6 +766,11 @@ class GuadaBlenderPlugin {
         samples: { type: 'number', required: false, description: '采样数，默认 32' },
         camera: { type: 'string', required: false, description: '可选：相机对象名' },
         allow_overwrite: { type: 'boolean', required: false, description: '允许覆盖已有帧文件' },
+        run_in_background: {
+          type: 'boolean',
+          required: false,
+          description: '后台执行并返回 jobId（用 job_read/job_stop 管理），默认 false',
+        },
       },
       dangerLevel: 'normal',
       display: { icon: 'image', argsKey: 'frames' },
@@ -707,19 +807,48 @@ class GuadaBlenderPlugin {
           }
         }
 
+        const payload = {
+          frames,
+          output_dir: outDir,
+          format,
+          prefix,
+          width: asNumber(args.width, 640),
+          height: asNumber(args.height, 640),
+          samples: asNumber(args.samples, 32),
+          camera: args.camera ? String(args.camera) : undefined,
+        };
+
+        if (asBool(args.run_in_background)) {
+          const tempDir = await fs.promises.mkdtemp(
+            path.join(os.tmpdir(), 'guada-blender-job-'),
+          );
+          const payloadPath = path.join(tempDir, 'payload.json');
+          const resultPath = path.join(tempDir, 'result.json');
+          await fs.promises.writeFile(payloadPath, JSON.stringify(payload), 'utf8');
+          const { jobId, logFilePath } = this.startBlenderJob({
+            executable,
+            args: this.buildDriverArgs('render_frames', payloadPath, resultPath, blend),
+            config,
+            workspace,
+            label: `blender_render_frames: ${frames.length} frame(s)`,
+            signal,
+            sessionId: ctx && ctx.session && ctx.session.sessionId,
+          });
+          return {
+            content: json({
+              jobId,
+              logFilePath,
+              outputDir: outDir,
+              frames,
+              note: 'running in background; use job_read with the job id to follow progress, job_stop to cancel',
+            }),
+          };
+        }
+
         const result = await runBlender({
           executable,
           operation: 'render_frames',
-          payload: {
-            frames,
-            output_dir: outDir,
-            format,
-            prefix,
-            width: asNumber(args.width, 640),
-            height: asNumber(args.height, 640),
-            samples: asNumber(args.samples, 32),
-            camera: args.camera ? String(args.camera) : undefined,
-          },
+          payload,
           blendPath: blend,
           config,
           cwd: workspace,
@@ -1032,6 +1161,11 @@ class GuadaBlenderPlugin {
           description: 'JSON 对象字符串，如 {"image":"ref.png","out":"out.json"}',
         },
         allow_overwrite: { type: 'boolean', required: false, description: '允许覆盖已有输出' },
+        run_in_background: {
+          type: 'boolean',
+          required: false,
+          description: '后台执行并返回 jobId（用 job_read/job_stop 管理），默认 false',
+        },
       },
       dangerLevel: 'normal',
       display: { icon: 'helper', argsKey: 'name' },
@@ -1092,7 +1226,7 @@ class GuadaBlenderPlugin {
           }
         }
 
-        const result = await runHelper({
+        const runArgs = {
           helper,
           helpersRoot: path.join(this.pluginDir, 'helpers'),
           python,
@@ -1103,7 +1237,30 @@ class GuadaBlenderPlugin {
           cwd: workspace,
           signal,
           allowOverwrite: asBool(args.allow_overwrite),
-        });
+        };
+
+        if (asBool(args.run_in_background)) {
+          const prepared = await prepareHelperCommand(runArgs);
+          const { jobId, logFilePath } = this.startBlenderJob({
+            executable: prepared.command,
+            args: prepared.args,
+            config: { ...config, timeoutMs: config.helperTimeoutMs },
+            workspace,
+            label: `blender_helper_run: ${helper.name}`,
+            signal,
+            sessionId: ctx && ctx.session && ctx.session.sessionId,
+          });
+          return {
+            content: json({
+              jobId,
+              logFilePath,
+              helper: helper.name,
+              note: 'running in background; use job_read to follow progress',
+            }),
+          };
+        }
+
+        const result = await runHelper(runArgs);
 
         return {
           content: json({

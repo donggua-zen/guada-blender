@@ -1,7 +1,7 @@
 {
   "id": "guada-blender",
   "name": "GuaDa Blender",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Blender 3D 建模、场景检查、预览、渲染与导出工具（三方插件）",
   "author": "donggua-zen",
   "category": "user",
@@ -12,5 +12,58 @@
   "entries": {
     "backend": "index.js",
     "frontend": "frontend/dist"
+  },
+  "configSchema": {
+    "fields": [
+      {
+        "key": "blenderExecutable",
+        "label": "Blender 可执行文件",
+        "type": "text",
+        "description": "留空 = 自动探测（Windows 扫描 Program Files\\Blender Foundation）",
+        "placeholder": "C:\\Program Files\\Blender Foundation\\Blender 4.5\\blender.exe"
+      },
+      {
+        "key": "analysisPythonExecutable",
+        "label": "分析 Python（helper）",
+        "type": "text",
+        "description": "需要 numpy / opencv / Pillow；留空 = 自动探测"
+      },
+      {
+        "key": "timeoutMs",
+        "label": "Blender 超时（毫秒）",
+        "type": "number",
+        "default": 180000
+      },
+      {
+        "key": "helperTimeoutMs",
+        "label": "Helper 超时（毫秒）",
+        "type": "number",
+        "default": 120000
+      },
+      {
+        "key": "maxOutputChars",
+        "label": "日志上限（字符）",
+        "type": "number",
+        "default": 20000
+      },
+      {
+        "key": "restrictToWorkspace",
+        "label": "限制路径在会话 workspace 内",
+        "type": "boolean",
+        "default": true
+      },
+      {
+        "key": "enablePython",
+        "label": "允许 blender_python / blender_run_script",
+        "type": "boolean",
+        "default": true
+      },
+      {
+        "key": "enableHelpers",
+        "label": "启用 helper",
+        "type": "boolean",
+        "default": true
+      }
+    ]
   }
 }

@@ -2,7 +2,7 @@
 
 GuaDa 的**三方插件**：把 Blender 3D 建模、场景检查、预览、渲染与导出接进 GuaDa。
 
-> 参考 `CheshireJCat/blender`（dsh-blender）的能力形态，当前实现 **13 个工具 + 30 个技能（1 编排 + 29 领域模块）+ 14 个确定性 helper**（Phase 4）。
+> 参考 `CheshireJCat/blender`（dsh-blender）的能力形态，当前实现 **13 个工具 + 30 个技能（1 编排 + 29 领域模块）+ 17 个确定性 helper**（Phase 5）。
 > 不依赖 BlenderMCP、不开放控制端口：每次操作启动独立的 `blender --background` 进程。
 
 ## 工具
@@ -31,9 +31,28 @@ GuaDa 的**三方插件**：把 Blender 3D 建模、场景检查、预览、渲�
 
 参考图分析、渲染对比、动画 QA：
 
-`animation-contact-sheet`、`reference-manifest-compiler`、`render-overlay-validator`、`silhouette-validator`、`template-analyzer`、`segment-source-parts`、`seeded-part-masks`、`atlas-region-detector`、`atlas-region-mapper`、`contour-correspondence-report`、`look-fit-report`、`multiview-fit-report`、`register-orthographic-views`、`view-constraint-report`
+`animation-contact-sheet`、`reference-manifest-compiler`、`render-overlay-validator`、`silhouette-validator`、`template-analyzer`、`segment-source-parts`、`seeded-part-masks`、`atlas-region-detector`、`atlas-region-mapper`、`contour-correspondence-report`、`look-fit-report`、`multiview-fit-report`、`register-orthographic-views`、`view-constraint-report`、`wireframe-analyzer`、`mask-to-mesh-recipe`、`source-locked-skin-recipe`
 
-未收录（catalog 标 `requires-scipy` / `maintenance`）：`wireframe-analyzer`、`mask-to-mesh-recipe`、`source-locked-skin-recipe`、`skill-graph-audit`、`release-readiness-check`、`sanitize-skill-contributions`。
+未收录（catalog 标 `maintenance`）：`skill-graph-audit`、`release-readiness-check`、`sanitize-skill-contributions`。
+
+### 后台执行
+
+`blender_render` / `blender_render_frames` / `blender_helper_run` 支持 `run_in_background: true`：
+返回 `jobId` 与 `logFilePath`，用宿主的 `job_read` / `job_list` / `job_stop` 轮询与取消。
+（宿主的 `PluginApi.startJob` 按 shell 语义登记：字节日志 + 默认完成通知。）
+
+### 通用配置页
+
+`manifest.configSchema` 声明字段后，宿主插件页会出现「配置」按钮，自动渲染表单并写回
+`plugin:<id>` 数据；不需要插件自带前端组件。本插件同时保留自带设置页（含「测试连接」这类动作）。
+
+### E2E
+
+```bash
+node scripts/e2e-character.mjs
+```
+
+跑完输出 `tmp/e2e-character/e2e-report.json` 与图片；记录见 `docs/E2E.md`。
 
 ## 安装
 

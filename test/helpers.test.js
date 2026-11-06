@@ -19,8 +19,8 @@ function workspace() {
 
 const config = { restrictToWorkspace: true };
 
-test('catalog has 14 unique helpers with scripts', () => {
-  assert.equal(HELPERS.length, 14);
+test('catalog has 17 unique helpers with scripts', () => {
+  assert.equal(HELPERS.length, 17);
   const names = new Set(HELPERS.map((h) => h.name));
   assert.equal(names.size, HELPERS.length);
   for (const helper of HELPERS) {
@@ -30,12 +30,14 @@ test('catalog has 14 unique helpers with scripts', () => {
   }
 });
 
-test('scipy and maintenance helpers are listed as unsupported', () => {
+test('scipy helpers are bundled; only maintenance helpers stay unsupported', () => {
+  const bundled = HELPERS.map((item) => item.name);
+  assert.ok(bundled.includes('wireframe-analyzer'));
+  assert.ok(bundled.includes('mask-to-mesh-recipe'));
+  assert.ok(bundled.includes('source-locked-skin-recipe'));
+
   const names = UNSUPPORTED.map((item) => item.name);
-  assert.ok(names.includes('wireframe-analyzer'));
-  assert.ok(names.includes('mask-to-mesh-recipe'));
-  const scipy = UNSUPPORTED.filter((item) => item.reason === 'requires-scipy');
-  assert.equal(scipy.length, 3);
+  assert.ok(!names.includes('wireframe-analyzer'));
   const maintenance = UNSUPPORTED.filter((item) => item.reason === 'maintenance');
   assert.equal(maintenance.length, 3);
 });
